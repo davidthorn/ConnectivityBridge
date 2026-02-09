@@ -2,6 +2,8 @@
 
 ConnectivityBridge is a **Swift Package** that provides a typed request/response bridge on top of **WatchConnectivity**. It ships with a **fully working iOS + watchOS demo app** so you can run the code on simulators or real devices and see the communication flow end-to-end.
 
+Read the full documentation in [ConnectivityBridge/DOCS.md](ConnectivityBridge/DOCS.md).
+
 ## Add The Package (SPM)
 
 Add ConnectivityBridge to your `Package.swift`:
@@ -163,3 +165,4 @@ try await transport.send(payload)
 
 - The UI is intentionally verbose so it can be shown in tutorials without narration.
 - The “Latest Activity” section is a full log with timestamps, direction, and request IDs.
+- For full API and usage documentation, see `ConnectivityBridge/DOCS.md`.
