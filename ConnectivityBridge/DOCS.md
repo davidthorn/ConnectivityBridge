@@ -1,17 +1,139 @@
 # ConnectivityBridge Documentation
 
-This document describes the two layers provided by ConnectivityBridge:
+This document explains ConnectivityBridge from two perspectives:
 
-- `TypedConnectivityBridge<Request, Response>`: a typed request/response bridge with timeouts.
-- `WatchConnectivityBridge`: a low-level transport wrapper around `WCSession`.
+- **Junior-friendly**: copy/paste sections to get a working connection.
+- **Architect-friendly**: understand the roles, flow, and tradeoffs.
 
-Both are designed for Swift Concurrency and can be used independently.
+It covers two layers:
+
+- `TypedConnectivityBridge<Request, Response>`: typed request/response with timeouts.
+- `WatchConnectivityBridge`: low-level WatchConnectivity wrapper.
+
+Both are built for Swift Concurrency and can be used independently.
+
+---
+
+## Quick Start (Copy/Paste)
+
+### 1) Add the Package
+
+In your app target, add the Swift Package and import it:
+
+```swift
+import ConnectivityBridge
+```
+
+### 2) Start the Bridge Early
+
+**iOS (AppDelegate)**
+
+```swift
+
+import ConnectivityBridge
+
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        WatchConnectivityBridge.shared.connect()
+        return true
+    }
+}
+
+@main
+struct YourApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        WindowGroup { ContentView() }
+    }
+}
+```
+
+**watchOS (App init)**
+
+```swift
+
+import ConnectivityBridge
+
+@main
+struct YourWatchApp: App {
+    let bridge = WatchConnectivityBridge.shared
+
+    init() {
+        bridge.connect()
+    }
+
+    var body: some Scene {
+        WindowGroup { WatchContentView() }
+    }
+}
+```
+
+### 3) Send a Request + Await a Reply
+
+```swift
+let bridge = TypedConnectivityBridge<BridgeMessage, BridgeMessage>(
+    transport: WatchConnectivityBridge.shared
+)
+
+let request = BridgeMessage(text: "Ping?", origin: "iPhone")
+let reply = try await bridge.request(request, timeout: .seconds(2))
+print("Reply: \(reply.text)")
+```
+
+### 4) Handle Incoming Requests
+
+```swift
+Task {
+    let requests = await bridge.requests()
+    for await req in requests {
+        let response = BridgeMessage(text: "Pong", origin: "Watch", id: req.id)
+        await bridge.reply(to: req.id, with: response)
+    }
+}
+```
+
+---
+
+## What Each Layer Does (Architect View)
+
+### TypedConnectivityBridge
+
+**Purpose**: Provide a typed request/response API with timeouts and correlation IDs.
+
+**How it works**:
+
+1. A request payload is wrapped in an envelope with a UUID.
+2. The envelope is encoded and sent via `WatchConnectivityBridge`.
+3. Replies arrive as envelopes with the same UUID.
+4. The bridge matches reply → request and resumes the awaiting call.
+
+**When to use**:
+
+- You want to `await` replies and handle timeouts.
+- You want a clear request → reply model across phone/watch.
+
+### WatchConnectivityBridge
+
+**Purpose**: A thin, async wrapper around `WCSession` that exposes connection state and typed payloads.
+
+**How it works**:
+
+- Uses `WCSession` to send `Data`.
+- Decodes received `Data` into typed payloads.
+- Emits `ConnectionSnapshot<T>` with reachability and last sent/received payloads.
+
+**When to use**:
+
+- You want full control over send/receive.
+- You don’t need typed request/response matching.
+
+---
 
 ## TypedConnectivityBridge
-
-### What It Solves
-
-`TypedConnectivityBridge` lets you send strongly-typed requests and receive strongly-typed replies. It correlates replies with requests using a shared `UUID` and provides a timeout mechanism so you can safely await responses.
 
 ### Type Requirements
 
@@ -23,7 +145,7 @@ Both request and response types must conform to:
 
 This allows payloads to be encoded, sent over `WCSession`, and correlated by `id`.
 
-### Basic Usage
+### Basic Setup
 
 ```swift
 let bridge = TypedConnectivityBridge<BridgeMessage, BridgeMessage>(
@@ -35,11 +157,11 @@ bridge.connect()
 
 ### Send Without a Reply
 
-Use `send(_:)` when you do not expect a reply.
+Use `send(_:)` when you do not expect a reply. The call throws if encoding fails or `WCSession` reports an error.
 
 ```swift
 let message = BridgeMessage(text: "One-way ping", origin: "iPhone")
-await bridge.send(message)
+try await bridge.send(message)
 ```
 
 ### Send With a Reply + Timeout
@@ -94,6 +216,12 @@ The bridge emits `.statusChanged` events when connectivity flags change:
 
 - `BridgeError.timeout(UUID)` when a reply is not received within the timeout.
 
+`send(_:)` can throw:
+
+- `BridgeError.cannotSend` when the session is not ready.
+- `BridgeError.encodingFailed` when the payload cannot be encoded.
+- `BridgeError.sendFailed(String)` when `WCSession` reports a failure.
+
 Handle it explicitly:
 
 ```swift
@@ -104,11 +232,9 @@ do {
 }
 ```
 
+---
+
 ## WatchConnectivityBridge
-
-### What It Solves
-
-`WatchConnectivityBridge` is a light wrapper around `WCSession` that provides a typed snapshot stream (`ConnectionSnapshot<T>`) and async `send`.
 
 ### Connect
 
@@ -121,7 +247,7 @@ transport.connect()
 
 ```swift
 let payload = BridgeMessage(text: "Hello", origin: "iPhone")
-await transport.send(payload)
+try await transport.send(payload)
 ```
 
 ### Stream Typed Messages
@@ -148,62 +274,21 @@ Task {
 - `received` (last received payload)
 - `sent` (last sent payload)
 
+---
+
+## Simulator Setup (Quick)
+
+- Launch the iOS app **and** the watchOS app in their simulators.
+- Use **Xcode → Device and Simulators** to ensure the watch simulator is paired with your phone simulator.
+- When paired, the UI shows **Connected / Reachable** and requests begin to succeed.
+
+---
+
 ## Demo App
 
 A full iOS + watchOS demo app ships with this repo so you can run the bridge on simulators or devices and see the request/reply flow, status changes, and latency in real time.
 
-## Best Practice: Starting The Bridge Early
-
-To ensure WatchConnectivity is activated as early as possible, start the bridge at app launch. The recommended pattern differs slightly between iOS and watchOS:
-
-### iOS (AppDelegate)
-
-Initialize `WatchConnectivityBridge.shared` and call `connect()` in your `UIApplicationDelegate`. This starts the session before SwiftUI views appear.
-
-```swift
-final class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-    ) -> Bool {
-        let bridge = WatchConnectivityBridge.shared
-        bridge.connect()
-        return true
-    }
-}
-
-@main
-struct YourApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
-}
-```
-
-### watchOS (App Init)
-
-On watchOS, initialize and connect in the `App` initializer.
-
-```swift
-@main
-struct YourWatchApp: App {
-    let bridge = WatchConnectivityBridge.shared
-
-    init() {
-        bridge.connect()
-    }
-
-    var body: some Scene {
-        WindowGroup {
-            WatchContentView()
-        }
-    }
-}
-```
+---
 
 ## Notes
 
