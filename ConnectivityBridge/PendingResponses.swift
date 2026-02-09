@@ -31,4 +31,10 @@ actor PendingResponses<Response: Codable & Sendable & Identifiable> {
         guard let continuation = continuations.removeValue(forKey: id) else { return }
         continuation.resume(throwing: BridgeError.timeout(id))
     }
+
+    func fail(id: UUID, error: Error) {
+        timeouts.removeValue(forKey: id)?.cancel()
+        guard let continuation = continuations.removeValue(forKey: id) else { return }
+        continuation.resume(throwing: error)
+    }
 }

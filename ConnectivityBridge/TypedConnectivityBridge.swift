@@ -91,30 +91,38 @@ public actor TypedConnectivityBridge<Request: Codable & Sendable & Identifiable,
         return try await withCheckedThrowingContinuation { continuation in
             Task {
                 let timeoutTask = Task {
+                    // The timeout task is cancelled when a reply arrives. In that case
+                    // Task.sleep throws CancellationError; we ignore it and exit early.
                     try? await Task.sleep(for: timeout)
+                    // If we were cancelled by our own resolve/timeout cleanup, stop here.
                     if Task.isCancelled { return }
+                    // If we reach here, the sleep completed normally, so this represents a real timeout.
                     if await pending.isPending(id: id) {
                         await eventsStream.yield(.timeout(id: id, date: Date()))
                         await pending.timeout(id: id)
                     }
                 }
                 await pending.store(id: id, continuation: continuation, timeoutTask: timeoutTask)
-                await transport.send(envelope)
-                await eventsStream.yield(.sentRequest(payload, id: id, date: Date()))
+                do {
+                    try await transport.send(envelope)
+                    await eventsStream.yield(.sentRequest(payload, id: id, date: Date()))
+                } catch {
+                    await pending.fail(id: id, error: error)
+                }
             }
         }
     }
     
-    public func send(_ payload: Request) async {
+    public func send(_ payload: Request) async throws {
         let id = UUID()
         let envelope = Envelope(id: id, kind: .request, payload: payload)
-        await transport.send(envelope)
+        try await transport.send(envelope)
         await eventsStream.yield(.sentRequest(payload, id: id, date: Date()))
     }
 
     public func reply(to id: UUID, with response: Response) async {
         let reply = Envelope(id: id, kind: .reply, payload: response)
-        await transport.send(reply)
+        try? await transport.send(reply)
         await eventsStream.yield(.sentReply(response, id: id, date: Date()))
     }
     

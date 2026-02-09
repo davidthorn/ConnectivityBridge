@@ -89,16 +89,28 @@ public final class WatchConnectivityBridge: NSObject, WatchConnectivityBridging,
     }
     #endif
     
-    public func send<T: Codable & Sendable & Identifiable>(_ value: T) async {
-        guard canSendMessage else { return }
+    public func send<T: Codable & Sendable & Identifiable>(_ value: T) async throws {
+        guard canSendMessage else { throw BridgeError.cannotSend }
         let session = WCSession.default
-        guard let data = try? encoder.encode(value) else { return }
+        let data: Data
+        do {
+            data = try encoder.encode(value)
+        } catch {
+            throw BridgeError.encodingFailed
+        }
         await pushSnapshot(sentData: data)
         
-        session.sendMessageData(data) { _ in
-            // Ignore direct reply payloads; replies are sent as separate messages.
-        } errorHandler: { error in
-            print(error)
+        try await withCheckedThrowingContinuation { continuation in
+            session.sendMessageData(data) { _ in
+                // We intentionally ignore the reply payload here. Our app protocol always sends
+                // a separate reply message, and the peer calls replyHandler(Data()) in
+                // WCSessionDelegate.session(_:didReceiveMessageData:replyHandler:), so this
+                // completion fires for every delivered message. We only use it to signal
+                // that the send succeeded.
+                continuation.resume()
+            } errorHandler: { error in
+                continuation.resume(throwing: BridgeError.sendFailed(error.localizedDescription))
+            }
         }
     }
     
@@ -185,7 +197,9 @@ extension WatchConnectivityBridge: WCSessionDelegate {
         Task {
             await self.pushSnapshot(receivedData: messageData)
         }
-        // Send an empty ack to satisfy the reply requirement.
+        // Always acknowledge receipt. Our sender awaits the WCSession success callback
+        // and does not depend on a reply payload, so we return empty Data to complete
+        // the handshake and keep send() from timing out.
         replyHandler(Data())
     }
 

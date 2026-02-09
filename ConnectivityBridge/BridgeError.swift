@@ -9,4 +9,7 @@ import Foundation
 
 public enum BridgeError: Error, Sendable {
     case timeout(UUID)
+    case cannotSend
+    case encodingFailed
+    case sendFailed(String)
 }

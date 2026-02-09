@@ -80,7 +80,7 @@ struct ConnectivityBridgeTests {
         defer { receiver.cancel() }
 
         let request = TestRequest(id: UUID(), text: "One-way")
-        await phoneBridge.send(request)
+        try await phoneBridge.send(request)
         let received = try await withTimeout(.milliseconds(500)) { await receiver.value }
         #expect(received == request)
     }
@@ -175,7 +175,7 @@ struct ConnectivityBridgeTests {
         }
 
         let request = TestRequest(id: UUID(), text: "Buffered")
-        await phoneBridge.send(request)
+        try await phoneBridge.send(request)
 
         let receiver = Task<TestRequest, Never> {
             let requests = await watchBridge.requests()

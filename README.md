@@ -94,7 +94,7 @@ let bridge = TypedConnectivityBridge<BridgeMessage, BridgeMessage>(
 )
 
 let message = BridgeMessage(text: "One-way ping", origin: "iPhone")
-await bridge.send(message)
+try await bridge.send(message)
 ```
 
 ### Send With Reply + Timeout
@@ -150,7 +150,7 @@ Task {
 ```swift
 let transport = WatchConnectivityBridge.shared
 let payload = BridgeMessage(text: "Hello", origin: "iPhone")
-await transport.send(payload)
+try await transport.send(payload)
 ```
 
 ## Simulator Setup (Quick)

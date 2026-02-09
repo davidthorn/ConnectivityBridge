@@ -17,7 +17,7 @@ final class MockTransport: WatchConnectivityBridging, @unchecked Sendable {
 
     func connect() {}
 
-    func send<T: Codable & Sendable & Identifiable>(_ value: T) async {
+    func send<T: Codable & Sendable & Identifiable>(_ value: T) async throws {
         await state.yieldSnapshot(sent: value, received: nil)
         if let peer = await state.peer {
             await peer.receive(value)
