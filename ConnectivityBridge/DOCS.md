@@ -152,6 +152,59 @@ Task {
 
 A full iOS + watchOS demo app ships with this repo so you can run the bridge on simulators or devices and see the request/reply flow, status changes, and latency in real time.
 
+## Best Practice: Starting The Bridge Early
+
+To ensure WatchConnectivity is activated as early as possible, start the bridge at app launch. The recommended pattern differs slightly between iOS and watchOS:
+
+### iOS (AppDelegate)
+
+Initialize `WatchConnectivityBridge.shared` and call `connect()` in your `UIApplicationDelegate`. This starts the session before SwiftUI views appear.
+
+```swift
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        let bridge = WatchConnectivityBridge.shared
+        bridge.connect()
+        return true
+    }
+}
+
+@main
+struct YourApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+### watchOS (App Init)
+
+On watchOS, initialize and connect in the `App` initializer.
+
+```swift
+@main
+struct YourWatchApp: App {
+    let bridge = WatchConnectivityBridge.shared
+
+    init() {
+        bridge.connect()
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            WatchContentView()
+        }
+    }
+}
+```
+
 ## Notes
 
 - `TypedConnectivityBridge` is an `actor` and is safe to use from concurrent tasks.
